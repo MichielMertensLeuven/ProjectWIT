@@ -1,0 +1,13 @@
+DRT=FiniteElement("DRT",triangle,2)
+CG=FiniteElement("CG",triangle,3)
+W=DRT*CG
+
+(sigma,u)=TrialFunctions(W)
+(tau,v)=TestFunctions(W)
+
+CG1=FiniteElement("CG",triangle,1)
+f=Coefficient(CG1)
+g=Coefficient(CG1)
+
+a=(dot(sigma,tau)+dot(grad(u),tau)+dot(sigma, grad(v)))*dx
+L=-f*v*dx-g*v*ds

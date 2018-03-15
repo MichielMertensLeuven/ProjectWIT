@@ -1,0 +1,15 @@
+//To compile and run the project, follow the following steps
+
+//This step generates MixedPoissonDual.h
+//This is the form file with DOLFIN wrappers
+//The option -O is optional, and optimizes the generated code
+ffc -O -l dolfin MixedPoissonDual.ufl
+
+//Generate a makefile
+cmake .
+
+//Run the makefile
+make
+
+//Run the project executable
+./project

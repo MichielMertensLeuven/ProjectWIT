@@ -1,0 +1,5 @@
+Use this option to load ipopt. This option is required once per terminal session.
+export LD_LIBRARY_PATH=/localhost/packages/math_eng_soft/CoinIpopt/build/lib:$LD_LIBRARY_PATH
+
+The following compiles everything, runs it and displays the result.
+g++ --std=c++14 -I /localhost/packages/math_eng_soft/CoinIpopt/build/include/coin -I Eigen/ -L/localhost/packages/math_eng_soft/CoinIpopt/build/lib -o optimize_heat main.cpp print.cpp -lipopt -lm -ldl -g3 && ./optimize_heat && xdg-open plate_heat.ppm && xdg-open plate_material.ppm && notify-send "done"

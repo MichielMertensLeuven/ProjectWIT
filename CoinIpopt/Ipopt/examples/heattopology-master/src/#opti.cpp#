@@ -1,0 +1,191 @@
+#include "opti.hpp"
+#include <Eigen/Dense>
+#include <Eigen/Sparse>
+#include <Eigen/SparseLU>
+#include <iostream>
+#include <vector>
+
+namespace wit {
+template <int N> class HS071_NLP : public TNLP {
+  Eigen::SparseMatrix<double> S;
+  Eigen::SparseVector<double> u[N * N];
+
+public:
+  A = Eigen::SparseMatrix<double>(N * N, N *N);
+
+  // constructor
+  HS071_NLP(){};
+
+  // destructor
+  ~HS071_NLP(){};
+
+  // returns the size of the problem
+  bool get_nlp_info(Index &n, Index &m, Index &nnz_jac_g, Index &nnz_h_lag,
+                    IndexStyleEnum &index_style) {
+    std::cout << "in get_info" << std::endl;
+
+    // The problem N^2 variables
+    n = N * N;
+
+    // one inequality constraint
+    m = 1;
+
+    // in this example the jacobian is dense and contains N^2 nonzeros
+    nnz_jac_g = N * N;
+
+    // the hessian of the constraints contains 0 nonzero elements TODO: dit is
+    // fout!!!!!!!
+    nnz_h_lag = 0;
+
+    // use the C style indexing (0-based)
+    index_style = TNLP::C_STYLE;
+    std::cout << "done getting info" << std::endl;
+    return true;
+  }
+
+  // returns the variable bounds
+  bool get_bounds_info(Index n, Number *x_l, Number *x_u, Index m, Number *g_l,
+                       Number *g_u) {
+    std::cout << "getting bounds info" << std::endl;
+    // here, the n and m we gave IPOPT in get_nlp_info are passed back to us.
+    // If desired, we could assert to make sure they are what we think they are.
+    assert(n == N * N);
+    assert(m == 1);
+    // the variables have lower bounds of 0
+    for (Index i = 0; i < n; ++i) {
+      x_l[i] = 0.0;
+    }
+
+    // the variables have upper bounds of 1
+    for (Index i = 0; i < n; i++) {
+      x_u[i] = 1.0;
+    }
+
+    // the first constraint g1 has a lower bound of 0
+    g_l[0] = 0;
+
+    // the first constraint g1 has an upper bound of 0.4
+    g_u[0] = 0.4;
+
+    std::cout << "done getting bounds info" << std::endl;
+    return true;
+  }
+
+  // returns the initial point for the problem
+  bool get_starting_point(Index n, bool init_x, Number *x, bool init_z,
+                          Number *z_L, Number *z_U, Index m, bool init_lambda,
+                          Number *lambda) {
+    std::cout << "getting starting points" << std::endl;
+    // Here, we assume we only have starting values for x, if you code
+    // your own NLP, you can provide starting values for the dual variables
+    // if you wish
+    assert(init_x == true);
+    assert(init_z == false);
+    assert(init_lambda == false);
+
+    // initialize to the given starting point
+    for (int i = 0; i < n; i++) {
+      x[i] = 0.4;
+    }
+    std::cout << "done getting starting points" << std::endl;
+    return true;
+  }
+
+  // returns the value of the objective function
+  bool eval_f(Index n, const Number *x, bool new_x, Number &obj_value) {
+    assert(n == N * N);
+    std::cout << "in eval_f" << std::endl;
+    if (!new_x)
+      std::cout << "X did not change" << std::endl;
+    Eigen::SparseMatrix<double> A(n, n);
+    double k[N][N];
+    for (int i = 0; i < n; i++)
+      k[(int)floor(i / N)][(int)(i % N)] = x[i] * 80 + (1 - x[i]) * 0.01;
+    solve_heath(k, u, &A);
+    // plot(u,n);
+    for (int i = 0; i < N * N; i++) {
+      // assert(u[i]>=300);
+      if (u[i] < 300 - 1e-9) {
+        std::cout << i << ", " << u[i] << std::endl;
+      }
+      obj_value += u[i] - 300;
+    }
+    obj_value = obj_value / (n);
+    std::cout << "done eval_f" << std::endl;
+    return true;
+  }
+
+  // return the gradient of the objective function grad_{x} f(x)
+  bool eval_grad_f(Index n, const Number *x, bool new_x, Number *grad_f) {
+    assert(n == N * N);
+    std::cout << "in eval_grad_f" << std::endl;
+    if (A.nonZeros() == 0) {
+      double k[N][N];
+      for (int i = 0; i < n; i++)
+        k[(int)floor(i / N)][(int)(i % N)] = x[i] * 80 + (1 - x[i]) * 0.01;
+      solve_heath(k, u, &A);
+    }
+    Adjoint<N> adj = Adjoint<N>(&A, u);
+    adj.get_jacobi_x((double *)(grad_f));
+    std::cout << "done eval_grad_f" << std::endl;
+    return true;
+  }
+
+  // return the value of the constraints: g(x)
+  bool eval_g(Index n, const Number *x, bool new_x, Index m, Number *g) {
+    std::cout << "in eval_g" << std::endl;
+    assert(n == N * N);
+    assert(m == 1);
+
+    for (int i = 0; i < n; i++) {
+      g[0] += x[i];
+    }
+    g[0] = g[0] / (n);
+    std::cout << "done eval_g" << std::endl;
+    return true;
+  }
+
+  // return the structure or values of the jacobian of g
+  bool eval_jac_g(Index n, const Number *x, bool new_x, Index m, Index nele_jac,
+                  Index *iRow, Index *jCol, Number *values) {
+    std::cout << "in eval_jac_g" << std::endl;
+    if (values == NULL) {
+      for (int i = 0; i < n; i++) {
+        iRow[i] = 0;
+        jCol[i] = i;
+      }
+    } else {
+      for (int i = 0; i < n; i++) {
+        values[i] = 1 / (n);
+      }
+    }
+    assert(n == nele_jac);
+    std::cout << "done eval_jac_g" << std::endl;
+    return true;
+  }
+
+  // return the structure or values of the hessian of the lagrangian:
+  // sigma_f * hes(f(x)) + sum_i(lambda_i*g_i(x))
+  bool eval_h(Index n, const Number *x, bool new_x, Number obj_factor, Index m,
+              const Number *lambda, bool new_lambda, Index nele_hess,
+              Index *iRow, Index *jCol, Number *values) {
+    return false;
+  }
+
+  void finalize_u(SolverReturn status, Index n, const Number *x,
+                  const Number *z_L, const Number *z_U, Index m,
+                  const Number *g, const Number *lambda, Number obj_value,
+                  const IpoptData *ip_data, IpoptCalculatedQuantities *ip_cq) {
+    if (status != SUCCESS) {
+      std::cout << std::endl
+                << "ended with non-succes status: " << status << std::endl;
+    }
+    double u[n];
+    double k[N][N];
+    for (int i = 0; i < n; i++)
+      k[(int)floor(i / N)][(int)(i % N)] = x[i] * 80 + (1 - x[i]) * 0.01;
+    solve_heath(k, u, &A);
+    plot(u, n, (double *)x);
+  }
+};
+}
