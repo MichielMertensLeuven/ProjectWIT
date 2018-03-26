@@ -21,6 +21,7 @@ program main
 !    John Burkardt
 !
   implicit none
+  real ( kind = 8 ) obj
 
   call timestamp ( )
   write ( *, '(a)' ) ''
@@ -28,7 +29,7 @@ program main
   write ( *, '(a)' ) '  FORTRAN90 version'
   write ( *, '(a)' ) '  Test the FD2D_HEAT_STEADY library.'
 
-  call test01 ( )
+  call heat (obj)
 !
 !  Terminate.
 !
@@ -40,7 +41,8 @@ program main
 
   stop
 end
-subroutine test01 ( )
+
+subroutine heat (obj)
 
 !*****************************************************************************80
 !
@@ -59,7 +61,6 @@ subroutine test01 ( )
 !    John Burkardt
 !
   implicit none
-
   character ( len = 80 ) command_filename
   integer ( kind = 4 ) command_unit
   real ( kind = 8 ), external :: d
@@ -70,6 +71,7 @@ subroutine test01 ( )
   integer ( kind = 4 ) j
   integer ( kind = 4 ) nx
   integer ( kind = 4 ) ny
+  real ( kind = 8 ), allocatable :: rho(:)
   real ( kind = 8 ), allocatable :: umat(:,:)
   real ( kind = 8 ) u_mean
   real ( kind = 8 ), allocatable :: xmat(:,:)
@@ -80,17 +82,27 @@ subroutine test01 ( )
   real ( kind = 8 ) ymax
   real ( kind = 8 ) ymin
   real ( kind = 8 ), allocatable :: yvec(:)
+  real ( kind = 8 ) obj
+  
+
 !
 !  Specify the spatial grid.
 !
-  nx = 41
+
+  print*, 'problem started'
+  nx = 21
   allocate ( xvec(1:nx) )
-  call r8vec_linspace ( nx, 0.0D+00, 2.0D+00, xvec )
+  call r8vec_linspace ( nx, 0.0D+00, 0.01D+00, xvec )
 
-  ny = 21
+  ny = 41
   allocate ( yvec(1:ny) )
-  call r8vec_linspace ( ny, 0.0D+00, 1.0D+00, yvec )
-
+  call r8vec_linspace ( ny, 0.0D+00, 0.01D+00, yvec )
+  
+  allocate (rho(nx*ny))
+  rho = 0.0D+00
+  
+  
+  
   allocate ( xmat(1:nx,1:ny) )
   allocate ( ymat(1:nx,1:ny) )
   call r8vec_mesh_2d ( nx, ny, xvec, yvec, xmat, ymat )
@@ -98,7 +110,7 @@ subroutine test01 ( )
 !  Solve the finite difference approximation to the steady 2D heat equation.
 !
   allocate ( umat(1:nx,1:ny) )
-  call fd2d_heat_steady ( nx, ny, xvec, yvec, d, f, umat )
+  call fd2d_heat_steady ( nx, ny, xvec, yvec, d, f, umat, rho )
 !
 !  Create a data file.
 !
@@ -152,6 +164,13 @@ subroutine test01 ( )
 
   write ( *, '(a)' ) ' '
   write ( *, '(a,g14.6)' ) '  Mean value of U is ', u_mean
+
+!
+!  Calculate the objective function
+!
+
+  obj = u_mean
+
 !
 !  Free memory.
 !
@@ -160,43 +179,51 @@ subroutine test01 ( )
   deallocate ( xvec )
   deallocate ( ymat )
   deallocate ( yvec )
-
+  deallocate ( rho )
   return
 end
-function d ( x, y )
 
-!*****************************************************************************80
-!
-!! D evaluates the heat conductivity coefficient.
-!
-!  Licensing:
-!
-!    This code is distributed under the GNU LGPL license.
-!
-!  Modified:
-!
-!    23 July 2013
-!
-!  Author:
-!
-!    John Burkardt
-!
-!  Parameters:
-!
-!    Input, real ( kind = 8 ) X, Y, the evaluation point.
-!
-!    Output, real ( kind = 8 ) D, the value of the heat conductivity at (X,Y).
-!
-  implicit none
+!TODO dit moeten we nog aanpassen, hier aan de matrix van X waarden pakken
+ function d ( ix, iy, rho, nx, ny)
+ 
+ !*****************************************************************************80
+ !
+ !! D evaluates the heat conductivity coefficient.
+ !
+ !  Licensing:
+ !
+ !    This code is distributed under the GNU LGPL license.
+ !
+ !  Modified:
+ !
+ !    23 July 2013
+ !
+ !  Author:
+ !
+ !    John Burkardt
+ !
+ !  Parameters:
+ !
+ !    Input, real ( kind = 8 ) X, Y, the evaluation point.
+ !
+ !    Output, real ( kind = 8 ) D, the value of the heat conductivity at (X,Y).
+ !
+   implicit none
+ 
+   real ( kind = 8 ) d
+   integer ( kind = 4 ) ix
+   integer ( kind = 4 ) iy
+   integer ( kind = 4 ) nx
+   integer ( kind = 4 ) ny
+   integer ( kind = 4 ) i
+   real ( kind = 8 ), intent(in) :: rho(nx*ny)
+   
+   i = ( iy - 1 ) * nx + ix
+   d = 0.001D+00*(0.19D+00/52D+00+(1.0D+00-0.19D+00/52D+00)*rho(i))*52D+00
+ 
+   return
+ end
 
-  real ( kind = 8 ) d
-  real ( kind = 8 ) x
-  real ( kind = 8 ) y
-
-  d = 1.0D+00
-
-  return
-end
 function f ( x, y )
 
 !*****************************************************************************80
@@ -227,11 +254,11 @@ function f ( x, y )
   real ( kind = 8 ) x
   real ( kind = 8 ) y
 
-  f = 0.0D+00
+  f = 1.8D+00
 
   return
 end
-subroutine boundary ( nx, ny, x, y, n, a, rhs )
+subroutine boundary ( nx, ny, x, y, n, a, rhs, rho)
 
 !*****************************************************************************80
 !
@@ -293,12 +320,15 @@ subroutine boundary ( nx, ny, x, y, n, a, rhs )
 !    Input, real ( kind = 8 ) RHS(N), on input, the system right hand side, 
 !    with the entries for the interior nodes filled in.  On output, the entries for
 !    the boundary nodes have been set as well.
-!
+!  integer ( kind = 4 ) kc
+
   implicit none
 
   integer ( kind = 4 ) n
   integer ( kind = 4 ) nx
   integer ( kind = 4 ) ny
+  
+  real ( kind = 8 ), intent(in) :: rho(nx*ny)
 
   real ( kind = 8 ) a(n,n)
   integer ( kind = 4 ) i
@@ -307,14 +337,70 @@ subroutine boundary ( nx, ny, x, y, n, a, rhs )
   real ( kind = 8 ) rhs(n)
   real ( kind = 8 ) x(n)
   real ( kind = 8 ) y(n)
+  
+  real ( kind = 8 ) dce
+  real ( kind = 8 ) dcn
+  real ( kind = 8 ) dcs
+  real ( kind = 8 ) dcw
+  real ( kind = 8 ) dx
+  real ( kind = 8 ) dy
+  real ( kind = 8 ), external :: f
+  real ( kind = 8 ), external :: d
+  integer ( kind = 4 ) ic
+  integer ( kind = 4 ) in
+  integer ( kind = 4 ) is
+  integer ( kind = 4 ) jc
+  integer ( kind = 4 ) je
+  integer ( kind = 4 ) jw
+  integer ( kind = 4 ) ke
+  integer ( kind = 4 ) kn
+  integer ( kind = 4 ) ks
+  integer ( kind = 4 ) kw
 !
 !  Left boundary.
 !
+  dx = x(2) - x(1)
+  dy = y(2) - y(1)
+
   j = 1
   do i = 2, ny - 1
     kc = ( i - 1 ) * nx + j
-    a(kc,kc) = a(kc,kc) + 1.0D+00
-    rhs(kc) = 10.0D+00
+    if((Y(i) > 0.0035) .and. (Y(i) < 0.0065)) then
+      a(kc,kc) = 1.0D+00
+      rhs(kc) = 291.15D+00
+    else
+      ic = i
+      jc = j
+      in = ic + 1
+      is = ic - 1
+      je = jc + 1
+
+      ke = kc + 1
+      kn = kc + nx
+      ks = kc - nx
+
+      
+      dce = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(je,ic, rho, nx, ny))
+      dcw = dce
+      dcn = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(jc,in, rho, nx, ny))
+      dcs = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(jc,is, rho, nx, ny))
+      
+      
+
+
+!      dce = d ( 0.5D+00 * ( x(jc) + x(je) ),             y(ic) )
+!      dcw = dce
+!      dcn = d (             x(jc),           0.5D+00 * ( y(ic) + y(in) ) )
+!      dcs = d (             x(jc),           0.5D+00 * ( y(ic) + y(is) ) )
+
+      a(kc,kc) = ( dce + dcw ) / dx / dx + ( dcn + dcs ) / dy / dy
+      a(kc,ke) = - 2.0D+00*dce         / dx / dx
+      a(kc,kn) =                           - dcn         / dy / dy
+      a(kc,ks) =                                 - dcs   / dy / dy
+
+      rhs(kc) = f ( x(jc), y(ic) )
+      
+    endif  
   end do
 !
 !  Right boundary.
@@ -322,27 +408,209 @@ subroutine boundary ( nx, ny, x, y, n, a, rhs )
   j = nx
   do i = 2, ny - 1
     kc = ( i - 1 ) * nx + j
-    a(kc,kc) = a(kc,kc) + 1.0D+00
-    rhs(kc) = 100.0D+00
+    if((Y(i) > 0.0035) .and. (Y(i) < 0.0065)) then
+      a(kc,kc) = 1.0D+00
+      rhs(kc) = 291.15D+00
+    else
+      ic = i
+      jc = j
+      in = ic + 1
+      is = ic - 1
+      jw = jc - 1
+
+      kw = kc - 1
+      kn = kc + nx
+      ks = kc - nx
+
+      dcw = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(jw,ic, rho, nx, ny))  
+      dce = dcw
+      dcn = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(jc,in, rho, nx, ny))
+      dcs = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(jc,is, rho, nx, ny))
+
+!      dcw = d ( 0.5D+00 * ( x(jc) + x(jw) ),             y(ic) )
+!      dce = dcw
+!      dcn = d (             x(jc),           0.5D+00 * ( y(ic) + y(in) ) )
+!      dcs = d (             x(jc),           0.5D+00 * ( y(ic) + y(is) ) )
+
+      a(kc,kc) = ( dce + dcw ) / dx / dx + ( dcn + dcs ) / dy / dy
+      a(kc,kw) =       - 2.0D+00*dcw   / dx / dx
+      a(kc,kn) =                           - dcn         / dy / dy
+      a(kc,ks) =                                 - dcs   / dy / dy
+
+      rhs(kc) = f ( x(jc), y(ic) )
+    endif
   end do
 !
 !  Lower boundary.
 !
   i = 1
-  do j = 1, nx
-    kc = ( i - 1 ) * nx + j
-    a(kc,kc) = a(kc,kc) + 1.0D+00
-    rhs(kc) = 0.0D+00
+  do j = 2, nx-1
+      kc = ( i - 1 ) * nx + j
+      ic = i
+      jc = j
+      in = ic + 1
+      je = jc + 1
+      jw = jc - 1
+
+      ke = kc + 1
+      kw = kc - 1
+      kn = kc + nx
+      
+      dce = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(je,ic, rho, nx, ny))
+      dcw = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(jw,ic, rho, nx, ny))
+      dcn = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(jc,in, rho, nx, ny))
+      dcs = dcn
+
+!      dce = d ( 0.5D+00 * ( x(jc) + x(je) ),             y(ic) )
+!      dcw = d ( 0.5D+00 * ( x(jc) + x(jw) ),             y(ic) )
+!      dcn = d (             x(jc),           0.5D+00 * ( y(ic) + y(in) ) )
+!      dcs = dcn
+
+      a(kc,kc) = ( dce + dcw ) / dx / dx + ( dcn + dcs ) / dy / dy
+      a(kc,ke) = - dce         / dx / dx
+      a(kc,kw) =       - dcw   / dx / dx
+      a(kc,kn) =                           - 2.0D+00*dcn         / dy / dy
+
+      rhs(kc) = f ( x(jc), y(ic) )
   end do
+  
+  !lower left corner
+  j=1
+  kc = ( i - 1 ) * nx + j
+  ic = i
+  jc = j
+  in = ic + 1
+  je = jc + 1
+
+  ke = kc + 1
+  kn = kc + nx
+ 
+  dce = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(je,ic, rho, nx, ny))
+  dcw = dce
+  dcn = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(jc,in, rho, nx, ny))
+  dcs = dcn
+
+!      dce = d ( 0.5D+00 * ( x(jc) + x(je) ),             y(ic) )
+!      dcw = dce
+!      dcn = d (             x(jc),           0.5D+00 * ( y(ic) + y(in) ) )
+!      dcs = dcn
+
+  a(kc,kc) = ( dce + dcw ) / dx / dx + ( dcn + dcs ) / dy / dy
+  a(kc,ke) = - 2.0D+00*dce         / dx / dx
+  a(kc,kn) =                           - 2.0D+00*dcn         / dy / dy
+  rhs(kc) = f ( x(jc), y(ic) )
+  
+  !lower right corner
+  j=nx
+  kc = ( i - 1 ) * nx + j
+  ic = i
+  jc = j
+  in = ic + 1
+  jw = jc - 1
+
+  kw = kc - 1
+  kn = kc + nx
+ 
+  dcw = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(jw,ic, rho, nx, ny))
+  dce = dcw
+  dcn = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(jc,in, rho, nx, ny))
+  dcs = dcn
+
+!      dcw = d ( 0.5D+00 * ( x(jc) + x(jw) ),             y(ic) )
+!      dce = dcw
+!      dcn = d (             x(jc),           0.5D+00 * ( y(ic) + y(in) ) )
+!      dcs = dcn
+
+  a(kc,kc) = ( dce + dcw ) / dx / dx + ( dcn + dcs ) / dy / dy
+  a(kc,kw) =       - 2.0D+00*dcw   / dx / dx
+  a(kc,kn) =                           - 2.0D+00*dcn         / dy / dy
+  rhs(kc) = f ( x(jc), y(ic) )
+  
 !
 !  Upper boundary.
 !
   i = ny
-  do j = 1, nx
-    kc = ( i - 1 ) * nx + j
-    a(kc,kc) = a(kc,kc) + 1.0D+00
-    rhs(kc) = 0.0D+00
+  do j = 2, nx-1
+      kc = ( i - 1 ) * nx + j
+      ic = i
+      jc = j
+      is = ic - 1
+      je = jc + 1
+      jw = jc - 1
+
+      ke = kc + 1
+      kw = kc - 1
+      ks = kc - nx
+
+      dce = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(je,ic, rho, nx, ny))
+      dcw = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(jw,ic, rho, nx, ny))
+      dcs = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(jc,is, rho, nx, ny))
+      dcn = dcs
+      
+!      dce = d ( 0.5D+00 * ( x(jc) + x(je) ),             y(ic) )
+!      dcw = d ( 0.5D+00 * ( x(jc) + x(jw) ),             y(ic) )
+!      dcn = d (             x(jc),           0.5D+00 * ( y(ic) + y(in) ) )
+!      dcs = dcs
+      
+      a(kc,kc) = ( dce + dcw ) / dx / dx + ( dcn + dcs ) / dy / dy
+      a(kc,ke) = - dce         / dx / dx
+      a(kc,kw) =       - dcw   / dx / dx
+      a(kc,ks) =                                 - 2.0D+00*dcs   / dy / dy
+
+      rhs(kc) = f ( x(jc), y(ic) )
   end do
+  
+  !upper left corner
+  j=1
+  kc = ( i - 1 ) * nx + j
+  ic = i
+  jc = j
+  is = ic - 1
+  je = jc + 1
+
+  ke = kc + 1
+  ks = kc - nx
+  
+  dce = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(je,ic, rho, nx, ny))
+  dcw = dce
+  dcs = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(jc,is, rho, nx, ny))
+  dcn = dcs
+
+!      dce = d ( 0.5D+00 * ( x(jc) + x(je) ),             y(ic) )
+!      dcw = dce
+!      dcs = d (             x(jc),           0.5D+00 * ( y(ic) + y(is) ) )
+!      dcn = dcs
+ 
+  a(kc,kc) = ( dce + dcw ) / dx / dx + ( dcn + dcs ) / dy / dy
+  a(kc,ke) = - 2.0D+00*dce         / dx / dx
+  a(kc,ks) =                                 - 2.0D+00*dcs   / dy / dy
+  rhs(kc) = f ( x(jc), y(ic) )
+  
+  !upper right corner
+  j=nx
+  kc = ( i - 1 ) * nx + j
+  ic = i
+  jc = j
+  is = ic - 1
+  jw = jc - 1
+
+  kw = kc - 1
+  ks = kc - nx
+  
+  dcw = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(jw,ic, rho, nx, ny))
+  dce = dcw
+  dcs = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(jc,is, rho, nx, ny))
+  dcn = dcs
+
+!      dcw = d ( 0.5D+00 * ( x(jc) + x(jw) ),             y(ic) )
+!      dce = dcw
+!      dcs = d (             x(jc),           0.5D+00 * ( y(ic) + y(is) ) )
+!      dcn = dcs
+ 
+  a(kc,kc) = ( dce + dcw ) / dx / dx + ( dcn + dcs ) / dy / dy
+  a(kc,kw) =       - 2.0D+00*dcw   / dx / dx
+  a(kc,ks) =                                 - 2.0D+00*dcs   / dy / dy
+  rhs(kc) = f ( x(jc), y(ic) )
 
   return
 end

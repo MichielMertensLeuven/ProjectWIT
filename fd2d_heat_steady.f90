@@ -1,4 +1,4 @@
-subroutine fd2d_heat_steady ( nx, ny, x, y, d, f, u )
+subroutine fd2d_heat_steady ( nx, ny, x, y, d, f, u, rho )
 
 !*****************************************************************************80
 !
@@ -69,6 +69,7 @@ subroutine fd2d_heat_steady ( nx, ny, x, y, d, f, u )
   integer ( kind = 4 ) nx
   integer ( kind = 4 ) ny
 
+  real ( kind = 8 ), intent(in) :: rho(nx*ny)
   real ( kind = 8 ), allocatable :: a(:,:)
   real ( kind = 8 ), external :: d
   real ( kind = 8 ), external :: f
@@ -90,11 +91,15 @@ subroutine fd2d_heat_steady ( nx, ny, x, y, d, f, u )
 !
 !  Define the matrix at interior points.
 !
-  call interior ( nx, ny, x, y, d, f, n, a, rhs )
+
+  print*, 'interior started'
+  call interior ( nx, ny, x, y, d, f, n, a, rhs, rho )
+  
+  print*, 'interior finished'
 !
 !  Handle boundary conditions.
 !
-  call boundary ( nx, ny, x, y, n, a, rhs )
+  call boundary ( nx, ny, x, y, n, a, rhs, rho )
 !
 !  Solve the linear system.
 !
@@ -109,6 +114,101 @@ subroutine fd2d_heat_steady ( nx, ny, x, y, d, f, u )
 
   return
 end
+
+
+! k is the interpolated heat conductivity matrix
+subroutine gradient ( t, nx, ny, d, x, y, rho)
+  integer ( kind = 4 ) nx
+  integer ( kind = 4 ) ny
+  integer ( kind = 4 ) n
+  real ( kind = 8 ), external :: d
+  real ( kind = 8 ), intent(in) :: rho(nx*ny)
+  real ( kind = 8 ) t(nx*ny)
+  real ( kind = 8 ) x(nx)
+  real ( kind = 8 ) y(ny)
+  real ( kind = 8 ) dx
+  real ( kind = 8 ) dy
+  real ( kind = 8 ), allocatable :: dndt(:,:)
+  real ( kind = 8 ), allocatable :: djdt(:)
+  real ( kind = 8 ), allocatable :: dndr(:,:)
+  real ( kind = 8 ), allocatable :: djdr(:)
+  
+  real ( kind = 8 ) dce
+  real ( kind = 8 ) dcn
+  real ( kind = 8 ) dcs
+  real ( kind = 8 ) dcw
+  integer ( kind = 4 ) ic
+  integer ( kind = 4 ) in
+  integer ( kind = 4 ) is
+  integer ( kind = 4 ) jc
+  integer ( kind = 4 ) je
+  integer ( kind = 4 ) jw
+  integer ( kind = 4 ) kc
+  integer ( kind = 4 ) ke
+  integer ( kind = 4 ) kn
+  integer ( kind = 4 ) ks
+  integer ( kind = 4 ) kw
+
+  
+  
+  
+  
+  n = nx*ny
+  dx = x(2) - x(1)
+  dy = y(2) - y(1)
+  allocate(dndt(n, n), djdt(n), dndr(n, n), djdr(n))
+  dndt=0.0D+00
+  djdt=x(nx)*y(ny)/n
+  dndr=0.0D+00
+  djdr=0.0D+00 !klopt
+  
+  
+  
+  
+  do ic = 2, ny - 1
+    do jc = 2, nx - 1
+
+      in = ic + 1
+      is = ic - 1
+      je = jc + 1
+      jw = jc - 1
+
+      kc = ( ic - 1 ) * nx + jc
+      ke = kc + 1
+      kw = kc - 1
+      kn = kc + nx
+      ks = kc - nx
+
+      dce = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(je,ic, rho, nx, ny))
+      dcw = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(jw,ic, rho, nx, ny))
+      dcn = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(jc,in, rho, nx, ny))
+      dcs = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(jc,is, rho, nx, ny))
+
+!      dce = d ( 0.5D+00 * ( x(jc) + x(je) ),             y(ic) )
+!      dcw = d ( 0.5D+00 * ( x(jc) + x(jw) ),             y(ic) )
+!      dcn = d (             x(jc),           0.5D+00 * ( y(ic) + y(in) ) )
+!      dcs = d (             x(jc),           0.5D+00 * ( y(ic) + y(is) ) )
+
+!TODO!!!
+
+!       a(kc,kc) = ( dce + dcw ) / dx / dx + ( dcn + dcs ) / dy / dy
+!       a(kc,ke) = - dce         / dx / dx
+!       a(kc,kw) =       - dcw   / dx / dx
+!       a(kc,kn) =                           - dcn         / dy / dy
+!       a(kc,ks) =                                 - dcs   / dy / dy
+! 
+!       rhs(kc) = f ( x(jc), y(ic) )
+
+    end do
+  end do
+
+  
+  
+  
+  
+  
+end subroutine gradient  
+
 subroutine get_unit ( iunit )
 
 !*****************************************************************************80
@@ -173,7 +273,7 @@ subroutine get_unit ( iunit )
 
   return
 end
-subroutine interior ( nx, ny, x, y, d, f, n, a, rhs )
+subroutine interior ( nx, ny, x, y, d, f, n, a, rhs, rho )
 
 !*****************************************************************************80
 !
@@ -242,6 +342,7 @@ subroutine interior ( nx, ny, x, y, d, f, n, a, rhs )
   integer ( kind = 4 ) nx
   integer ( kind = 4 ) ny
 
+  real ( kind = 8 ), intent(in) :: rho(nx*ny)
   real ( kind = 8 ) a(n,n)
   real ( kind = 8 ), external :: d
   real ( kind = 8 ) dc0
@@ -288,10 +389,16 @@ subroutine interior ( nx, ny, x, y, d, f, n, a, rhs )
       kn = kc + nx
       ks = kc - nx
 
-      dce = d ( 0.5D+00 * ( x(jc) + x(je) ),             y(ic) )
-      dcw = d ( 0.5D+00 * ( x(jc) + x(jw) ),             y(ic) )
-      dcn = d (             x(jc),           0.5D+00 * ( y(ic) + y(in) ) )
-      dcs = d (             x(jc),           0.5D+00 * ( y(ic) + y(is) ) )
+      
+      dce = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(je,ic, rho, nx, ny))
+      dcw = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(jw,ic, rho, nx, ny))
+      dcn = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(jc,in, rho, nx, ny))
+      dcs = 0.5D+00 *(d (jc,ic, rho, nx, ny)+d(jc,is, rho, nx, ny))
+
+!      dce = d ( 0.5D+00 * ( x(jc) + x(je) ),             y(ic) )
+!      dcw = d ( 0.5D+00 * ( x(jc) + x(jw) ),             y(ic) )
+!      dcn = d (             x(jc),           0.5D+00 * ( y(ic) + y(in) ) )
+!      dcs = d (             x(jc),           0.5D+00 * ( y(ic) + y(is) ) )
 
       a(kc,kc) = ( dce + dcw ) / dx / dx + ( dcn + dcs ) / dy / dy
       a(kc,ke) = - dce         / dx / dx
